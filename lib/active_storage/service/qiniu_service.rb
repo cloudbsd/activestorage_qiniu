@@ -44,6 +44,7 @@ module ActiveStorage
     end
 
     def upload(key, io, checksum: nil, content_type: nil, **)
+      key = key_with_prefix_path(key)
       instrument :upload, key: key, checksum: checksum do
         io = File.open(io) unless io.respond_to?(:read)
 
@@ -70,6 +71,7 @@ module ActiveStorage
     end
 
     def delete(key)
+      key = key_with_prefix_path(key, options[:sub_dir].to_s)
       instrument :delete, key: key do
         Qiniu.delete(bucket, key)
       end
@@ -82,6 +84,7 @@ module ActiveStorage
     end
 
     def exist?(key)
+      key = key_with_prefix_path(key, options[:sub_dir].to_s)
       instrument :exist, key: key do |payload|
         answer = items_for(key).any?
         payload[:exist] = answer
@@ -90,24 +93,25 @@ module ActiveStorage
     end
 
     def download(key)
+      instru_key = key_with_prefix_path(key, options[:sub_dir].to_s)
       if block_given?
-        instrument :streaming_download, key: key do
-          URI.open(url(key, disposition: :attachment)) do |file|
+        instrument :streaming_download, key: instru_key do
+          URI.open(url(key, disposition: :attachment, sub_dir: options[:sub_dir].to_s)) do |file|
             while data = file.read(64.kilobytes)
               yield data
             end
           end
         end
       else
-        instrument :download, key: key do
-          URI.open(url(key, disposition: :attachment)).read
+        instrument :download, key: instru_key do
+          URI.open(url(key, disposition: :attachment, sub_dir: options[:sub_dir].to_s)).read
         end
       end
     end
 
     def download_chunk(key, range)
-      instrument :download_chunk, key: key, range: range do
-        uri = URI(url(key, disposition: :attachment))
+      instrument :download_chunk, key: key_with_prefix_path(key, options[:sub_dir].to_s), range: range do
+        uri = URI(url(key, disposition: :attachment, sub_dir: options[:sub_dir].to_s))
         Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |client|
           client.get(uri, 'Range' => "bytes=#{range.begin}-#{range.exclude_end? ? range.end - 1 : range.end}").body
         end
@@ -115,6 +119,7 @@ module ActiveStorage
     end
 
     def url(key, **options)
+      key = key_with_prefix_path(key, options[:sub_dir].to_s)
       instrument :url, key: key do |payload|
         fop = if options[:fop].present?        # 内容预处理
                 options[:fop]
@@ -140,6 +145,7 @@ module ActiveStorage
     end
 
     def url_for_direct_upload(key, expires_in:, content_type:, content_length:, checksum:)
+      key = key_with_prefix_path(key)
       instrument :url, key: key do |payload|
         url = Qiniu::Config.up_host(bucket)
         payload[:url] = url
@@ -148,6 +154,7 @@ module ActiveStorage
     end
 
     def headers_for_direct_upload(key, content_type:, checksum:, **)
+      key = key_with_prefix_path(key)
       { "Content-Type" => content_type, "Content-MD5" => checksum, "x-token" => generate_uptoken(key) }
     end
 
@@ -199,5 +206,15 @@ module ActiveStorage
     def encode(value)
       Base64.encode64(value).strip.gsub(/\+/, '-').gsub(%r{/}, '_').gsub(/\r?\n/, '')
     end
+
+    def key_with_prefix_path(key, sub_dir = nil)
+      ActiveStorage::Service::QiniuService.key_with_prefix_path(key, sub_dir)
+    end
+
+    # class methods
+    def self.key_with_prefix_path(key, sub_dir = nil)
+      File.join( "uploads/", sub_dir.presence.try(:pluralize) || "qiniu_files" , key)
+    end
+
   end
 end
