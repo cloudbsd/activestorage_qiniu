@@ -70,7 +70,7 @@ module ActiveStorage
       end
     end
 
-    def delete(key)
+    def delete(key, **options)
       key = key_with_prefix_path(key, options[:sub_dir].to_s) # qibao
       instrument :delete, key: key do
         Qiniu.delete(bucket, key)
@@ -83,7 +83,7 @@ module ActiveStorage
       end
     end
 
-    def exist?(key)
+    def exist?(key, **options)
       key = key_with_prefix_path(key, options[:sub_dir].to_s) # qibao
       instrument :exist, key: key do |payload|
         answer = items_for(key).any?
@@ -92,7 +92,7 @@ module ActiveStorage
       end
     end
 
-    def download(key)
+    def download(key, **options)
       instru_key = key_with_prefix_path(key, options[:sub_dir].to_s) # qibao
       if block_given?
         instrument :streaming_download, key: instru_key do
@@ -109,7 +109,7 @@ module ActiveStorage
       end
     end
 
-    def download_chunk(key, range)
+    def download_chunk(key, range, **options)
       instrument :download_chunk, key: key_with_prefix_path(key, options[:sub_dir].to_s), range: range do # qibao
         uri = URI(url(key, disposition: :attachment, sub_dir: options[:sub_dir].to_s)) # qibao
         Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |client|
